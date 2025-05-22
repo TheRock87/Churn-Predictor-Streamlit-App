@@ -20,8 +20,6 @@ A machine learning application that predicts customer churn for a telecommunicat
 
 ## Demo
 
-![Demo GIF](https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNzMzZDIyMTBkNmQ4ZDcxZDZmZGQ0ZTU1MTkxZTI5OGE0ZjVmNzEzZiZlcD12MV9pbnRlcm5hbF9naWZzX2dpZklkJmN0PWc/your-demo-gif-id/giphy.gif)
-
 Try the live demo: [Churn Predictor App](https://churn-predictor-app-fbh.streamlit.app)
 
 ## Features
