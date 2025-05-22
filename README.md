@@ -50,7 +50,7 @@ To run this project locally:
 
 ```bash
 # Clone the repository
-git clone [https://github.com/yourusername/customer-churn-predictor.git](https://github.com/yourusername/customer-churn-predictor.git)
+git clone https://github.com/TheRock87/Churn-Predictor-Streamlit-App/tree/main
 cd customer-churn-predictor
 
 # Create a virtual environment (optional but recommended)
