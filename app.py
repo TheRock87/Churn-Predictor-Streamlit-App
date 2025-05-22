@@ -4,35 +4,22 @@ import pickle
 import numpy as np
 import os
 
-# Check for required packages
-required_packages = {
-    'matplotlib': 'matplotlib',
-    'seaborn': 'seaborn',
-    'plotly.express': 'plotly',
-    'plotly.graph_objects': 'plotly',
-    'PIL': 'pillow',
-    'xgboost': 'xgboost'
-}
+# Try to import optional packages but continue if they're not available
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    st.warning("Plotly not available. Some visualizations will be limited.")
 
-missing_packages = []
-for package, pip_name in required_packages.items():
-    try:
-        __import__(package.split('.')[0])
-    except ImportError:
-        missing_packages.append(pip_name)
-
-if missing_packages:
-    st.error(f"Missing required packages: {', '.join(missing_packages)}")
-    st.info(f"Please install missing packages using: pip install {' '.join(missing_packages)}")
-    st.stop()
-
-# Now import the rest after checking
-import matplotlib.pyplot as plt
-import seaborn as sns
-import plotly.express as px
-import plotly.graph_objects as go
-from PIL import Image
-import xgboost
+try:
+    import xgboost
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+    st.error("XGBoost not available. Model predictions will not work.")
+    st.info("Please install XGBoost: pip install xgboost>=2.0.0")
 
 # Set page configuration
 st.set_page_config(
@@ -77,6 +64,11 @@ st.markdown("""
 @st.cache_resource
 def load_model_and_preprocessors():
     try:
+        # Check if XGBoost is available
+        if not XGBOOST_AVAILABLE:
+            st.error("XGBoost is required but not available.")
+            return None, None, None
+            
         # Check if files exist before attempting to load them
         required_files = ['ensemble_model.pkl', 'scaler.pkl', 'encoder.pkl']
         missing_files = [f for f in required_files if not os.path.exists(f)]
@@ -84,7 +76,30 @@ def load_model_and_preprocessors():
         if missing_files:
             st.error(f"Missing required files: {', '.join(missing_files)}")
             st.info("Please make sure all required pickle files are in the app directory.")
-            return None, None, None
+            
+            # For Streamlit Cloud deployment - check if files are in the mount directory
+            alt_paths = {
+                'ensemble_model.pkl': ['/mount/src/churn-predictor-streamlit-app/ensemble_model.pkl'],
+                'scaler.pkl': ['/mount/src/churn-predictor-streamlit-app/scaler.pkl'],
+                'encoder.pkl': ['/mount/src/churn-predictor-streamlit-app/encoder.pkl']
+            }
+            
+            # Try alternative paths for each missing file
+            for missing_file in missing_files:
+                for alt_path in alt_paths.get(missing_file, []):
+                    if os.path.exists(alt_path):
+                        st.info(f"Found {missing_file} at alternative path: {alt_path}")
+                        # Create a symlink to the original expected path
+                        try:
+                            os.symlink(alt_path, missing_file)
+                            st.success(f"Linked {alt_path} to {missing_file}")
+                        except Exception as e:
+                            st.error(f"Failed to create symlink: {str(e)}")
+            
+            # Check again after trying alternative paths
+            missing_files = [f for f in required_files if not os.path.exists(f)]
+            if missing_files:
+                return None, None, None
         
         # Load the ensemble model
         try:
@@ -96,12 +111,20 @@ def load_model_and_preprocessors():
             return None, None, None
             
         # Load the scaler for numerical features
-        with open('scaler.pkl', 'rb') as file:
-            scaler = pickle.load(file)
+        try:
+            with open('scaler.pkl', 'rb') as file:
+                scaler = pickle.load(file)
+        except Exception as e:
+            st.error(f"Error loading scaler: {str(e)}")
+            return None, None, None
             
         # Load the encoder for categorical features
-        with open('encoder.pkl', 'rb') as file:
-            encoder = pickle.load(file)
+        try:
+            with open('encoder.pkl', 'rb') as file:
+                encoder = pickle.load(file)
+        except Exception as e:
+            st.error(f"Error loading encoder: {str(e)}")
+            return None, None, None
             
         return model, scaler, encoder
     except Exception as e:
@@ -397,18 +420,23 @@ def main():
                         'OnlineSecurity': 0.07
                     }
                     
-                    fig = px.bar(
-                        x=list(importance_data.values()),
-                        y=list(importance_data.keys()),
-                        orientation='h',
-                        labels={'x': 'Importance', 'y': 'Feature'},
-                        title='Feature Importance',
-                        color=list(importance_data.values()),
-                        color_continuous_scale='Blues'
-                    )
-                    
-                    fig.update_layout(height=400)
-                    st.plotly_chart(fig, use_container_width=True)
+                    if PLOTLY_AVAILABLE:
+                        fig = px.bar(
+                            x=list(importance_data.values()),
+                            y=list(importance_data.keys()),
+                            orientation='h',
+                            labels={'x': 'Importance', 'y': 'Feature'},
+                            title='Feature Importance',
+                            color=list(importance_data.values()),
+                            color_continuous_scale='Blues'
+                        )
+                        
+                        fig.update_layout(height=400)
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        # Fallback to simple text display if plotly is not available
+                        for feature, importance in sorted(importance_data.items(), key=lambda x: x[1], reverse=True):
+                            st.write(f"**{feature}**: {importance:.2f}")
                     
                 except Exception as e:
                     st.error(f"Prediction error: {e}")
@@ -420,69 +448,88 @@ def main():
         # Placeholder visualizations - in a real app, these would be based on your actual dataset
         st.write("These visualizations help understand patterns in customer churn.")
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Churn by Contract Type
-            contract_data = {
-                'Contract': ['Month-to-month', 'One year', 'Two year'],
-                'Churn Rate': [0.42, 0.11, 0.03]
-            }
-            fig = px.bar(
-                contract_data, 
-                x='Contract', 
-                y='Churn Rate',
-                title='Churn Rate by Contract Type',
-                color='Churn Rate',
-                color_continuous_scale='Reds'
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        if PLOTLY_AVAILABLE:
+            col1, col2 = st.columns(2)
             
-            # Churn by Tenure
-            tenure_data = pd.DataFrame({
-                'Tenure Group': ['0-12', '12-24', '24-36', '36-48', '48-60', '60-72'],
-                'Churn Rate': [0.52, 0.36, 0.27, 0.18, 0.12, 0.08]
-            })
-            fig = px.line(
-                tenure_data, 
-                x='Tenure Group', 
-                y='Churn Rate', 
-                markers=True,
-                title='Churn Rate by Tenure (months)',
-                line_shape='linear'
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            # Churn by Internet Service
-            internet_data = {
-                'Internet Service': ['DSL', 'Fiber optic', 'No'],
-                'Churn Rate': [0.19, 0.42, 0.07]
-            }
-            fig = px.pie(
-                internet_data, 
-                names='Internet Service', 
-                values='Churn Rate',
-                title='Churn Distribution by Internet Service',
-                hole=0.4,
-                color_discrete_sequence=px.colors.sequential.Blues
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            with col1:
+                # Churn by Contract Type
+                contract_data = {
+                    'Contract': ['Month-to-month', 'One year', 'Two year'],
+                    'Churn Rate': [0.42, 0.11, 0.03]
+                }
+                fig = px.bar(
+                    contract_data, 
+                    x='Contract', 
+                    y='Churn Rate',
+                    title='Churn Rate by Contract Type',
+                    color='Churn Rate',
+                    color_continuous_scale='Reds'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Churn by Tenure
+                tenure_data = pd.DataFrame({
+                    'Tenure Group': ['0-12', '12-24', '24-36', '36-48', '48-60', '60-72'],
+                    'Churn Rate': [0.52, 0.36, 0.27, 0.18, 0.12, 0.08]
+                })
+                fig = px.line(
+                    tenure_data, 
+                    x='Tenure Group', 
+                    y='Churn Rate', 
+                    markers=True,
+                    title='Churn Rate by Tenure (months)',
+                    line_shape='linear'
+                )
+                st.plotly_chart(fig, use_container_width=True)
             
-            # Monthly Charges vs Churn
-            fig = px.histogram(
-                x=[30, 45, 60, 75, 90, 105, 120],
-                nbins=10,
-                title='Monthly Charges Distribution',
-                labels={'x': 'Monthly Charges ($)'},
-                color_discrete_sequence=['#3366CC']
-            )
+            with col2:
+                # Churn by Internet Service
+                internet_data = {
+                    'Internet Service': ['DSL', 'Fiber optic', 'No'],
+                    'Churn Rate': [0.19, 0.42, 0.07]
+                }
+                fig = px.pie(
+                    internet_data, 
+                    names='Internet Service', 
+                    values='Churn Rate',
+                    title='Churn Distribution by Internet Service',
+                    hole=0.4,
+                    color_discrete_sequence=px.colors.sequential.Blues
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Monthly Charges vs Churn
+                fig = px.histogram(
+                    x=[30, 45, 60, 75, 90, 105, 120],
+                    nbins=10,
+                    title='Monthly Charges Distribution',
+                    labels={'x': 'Monthly Charges ($)'},
+                    color_discrete_sequence=['#3366CC']
+                )
+                
+                # Add a vertical line for average
+                fig.add_vline(x=70, line_width=2, line_dash="dash", line_color="red")
+                fig.add_annotation(x=70, y=10, text="Avg. Charge", showarrow=True, arrowhead=1)
+                
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            # Fallback to simple text display if plotly is not available
+            st.info("Visualizations require Plotly. Install with: pip install plotly")
             
-            # Add a vertical line for average
-            fig.add_vline(x=70, line_width=2, line_dash="dash", line_color="red")
-            fig.add_annotation(x=70, y=10, text="Avg. Charge", showarrow=True, arrowhead=1)
+            st.subheader("Key Churn Insights (Text Summary)")
+            st.write("**Contract Type Impact:**")
+            st.write("- Month-to-month: 42% churn rate")
+            st.write("- One year: 11% churn rate")
+            st.write("- Two year: 3% churn rate")
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.write("**Tenure Impact:**")
+            st.write("- New customers (0-12 months): 52% churn rate")
+            st.write("- Long-term customers (60-72 months): 8% churn rate")
+            
+            st.write("**Internet Service Impact:**")
+            st.write("- Fiber optic: 42% churn rate (highest)")
+            st.write("- DSL: 19% churn rate")
+            st.write("- No internet service: 7% churn rate (lowest)")
     
     with tab3:
         st.subheader("About This App")
