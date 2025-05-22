@@ -48,21 +48,67 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Function to load the model
+# Function to load the model and preprocessors
 @st.cache_resource
-def load_model():
+def load_model_and_preprocessors():
     try:
-        with open('model.pkl', 'rb') as file:
+        # Load the ensemble model
+        with open('ensemble_model.pkl', 'rb') as file:
             model = pickle.load(file)
-        return model
-    except FileNotFoundError:
-        st.error("Model file not found. Please make sure 'model.pkl' exists in the app directory.")
-        return None
+            
+        # Load the scaler for numerical features
+        with open('scaler.pkl', 'rb') as file:
+            scaler = pickle.load(file)
+            
+        # Load the encoder for categorical features
+        with open('encoder.pkl', 'rb') as file:
+            encoder = pickle.load(file)
+            
+        return model, scaler, encoder
+    except FileNotFoundError as e:
+        st.error(f"File not found: {str(e)}. Please make sure all pickle files exist in the app directory.")
+        return None, None, None
 
 # Function for preprocessing inputs
-def preprocess_inputs(df):
-    # Add any preprocessing steps here if needed
-    return df
+def preprocess_inputs(df, scaler, encoder):
+    # Make a copy of the dataframe to avoid modifying the original
+    df_processed = df.copy()
+    
+    # Separate categorical and numerical features
+    categorical_cols = ['gender', 'Partner', 'Dependents', 'PhoneService', 'MultipleLines',
+                        'InternetService', 'OnlineSecurity', 'OnlineBackup', 'DeviceProtection',
+                        'TechSupport', 'StreamingTV', 'StreamingMovies', 'Contract',
+                        'PaperlessBilling', 'PaymentMethod']
+    
+    numerical_cols = ['tenure', 'MonthlyCharges', 'TotalCharges', 'SeniorCitizen']
+    
+    # Apply encoding to categorical features
+    if encoder is not None:
+        try:
+            # Get the feature names from the encoder
+            encoded_features = encoder.get_feature_names_out(categorical_cols)
+            
+            # Transform the categorical columns
+            encoded_array = encoder.transform(df_processed[categorical_cols])
+            
+            # Create a DataFrame with the encoded features
+            encoded_df = pd.DataFrame(encoded_array, columns=encoded_features)
+            
+            # Drop original categorical columns and add encoded ones
+            df_processed = df_processed.drop(columns=categorical_cols)
+            df_processed = pd.concat([df_processed, encoded_df], axis=1)
+        except Exception as e:
+            st.warning(f"Encoding error: {e}. Using original categorical features.")
+    
+    # Apply scaling to numerical features
+    if scaler is not None:
+        try:
+            # Scale the numerical columns
+            df_processed[numerical_cols] = scaler.transform(df_processed[numerical_cols])
+        except Exception as e:
+            st.warning(f"Scaling error: {e}. Using original numerical features.")
+    
+    return df_processed
 
 # Main app layout
 def main():
@@ -209,10 +255,10 @@ def main():
         predict_button = st.button("Predict Churn Probability", use_container_width=True)
         
         if predict_button:
-            # Load model
-            model = load_model()
+            # Load model and preprocessors
+            model, scaler, encoder = load_model_and_preprocessors()
             
-            if model:
+            if model and scaler and encoder:
                 # Create input dataframe
                 input_data = pd.DataFrame({
                     'gender': [gender],
@@ -236,8 +282,8 @@ def main():
                     'TotalCharges': [total_charges]
                 })
                 
-                # Preprocess inputs
-                processed_data = preprocess_inputs(input_data)
+                # Preprocess inputs with scaler and encoder
+                processed_data = preprocess_inputs(input_data, scaler, encoder)
                 
                 try:
                     # Make prediction
