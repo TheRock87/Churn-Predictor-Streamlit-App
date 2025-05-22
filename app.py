@@ -137,41 +137,103 @@ def preprocess_inputs(df, scaler, encoder):
     # Make a copy of the dataframe to avoid modifying the original
     df_processed = df.copy()
     
-    # Separate categorical and numerical features
-    categorical_cols = ['gender', 'Partner', 'Dependents', 'PhoneService', 'MultipleLines',
-                        'InternetService', 'OnlineSecurity', 'OnlineBackup', 'DeviceProtection',
-                        'TechSupport', 'StreamingTV', 'StreamingMovies', 'Contract',
-                        'PaperlessBilling', 'PaymentMethod']
-    
-    numerical_cols = ['tenure', 'MonthlyCharges', 'TotalCharges', 'SeniorCitizen']
-    
-    # Apply encoding to categorical features
-    if encoder is not None:
-        try:
-            # Get the feature names from the encoder
-            encoded_features = encoder.get_feature_names_out(categorical_cols)
+    try:
+        # Apply encoders to categorical columns
+        if encoder is not None and isinstance(encoder, dict):
+            for col, col_encoder in encoder.items():
+                if col in df_processed.columns:
+                    try:
+                        # Transform the column using the specific encoder
+                        df_processed[col] = col_encoder.transform(df_processed[[col]])
+                    except Exception as e:
+                        st.warning(f"Error encoding column {col}: {str(e)}")
+                        # Fallback to manual encoding if encoder fails
+                        if col == 'gender':
+                            df_processed[col] = df_processed[col].map({'Male': 0, 'Female': 1})
+                        elif col in ['Partner', 'Dependents', 'PhoneService', 'PaperlessBilling']:
+                            df_processed[col] = df_processed[col].map({'No': 0, 'Yes': 1})
+                        elif col == 'MultipleLines':
+                            df_processed[col] = df_processed[col].map({'No': 0, 'Yes': 1, 'No phone service': 2})
+                        elif col == 'InternetService':
+                            df_processed[col] = df_processed[col].map({'DSL': 0, 'Fiber optic': 1, 'No': 2})
+                        elif col in ['OnlineSecurity', 'OnlineBackup', 'DeviceProtection', 'TechSupport', 'StreamingTV', 'StreamingMovies']:
+                            df_processed[col] = df_processed[col].map({'No': 0, 'Yes': 1, 'No internet service': 2})
+                        elif col == 'Contract':
+                            df_processed[col] = df_processed[col].map({'Month-to-month': 0, 'One year': 1, 'Two year': 2})
+                        elif col == 'PaymentMethod':
+                            payment_methods = {'Electronic check': 0, 'Mailed check': 1, 'Bank transfer (automatic)': 2, 'Credit card (automatic)': 3}
+                            df_processed[col] = df_processed[col].map(payment_methods)
+        else:
+            # Fallback to manual encoding if encoder is not available
+            st.warning("Encoder not available or not in expected format. Using manual encoding.")
+            # Gender encoding
+            if 'gender' in df_processed.columns:
+                df_processed['gender'] = df_processed['gender'].map({'Male': 0, 'Female': 1})
             
-            # Transform the categorical columns
-            encoded_array = encoder.transform(df_processed[categorical_cols])
+            # Yes/No columns
+            yes_no_columns = ['Partner', 'Dependents', 'PhoneService', 'PaperlessBilling']
+            for col in yes_no_columns:
+                if col in df_processed.columns:
+                    df_processed[col] = df_processed[col].map({'No': 0, 'Yes': 1})
             
-            # Create a DataFrame with the encoded features
-            encoded_df = pd.DataFrame(encoded_array, columns=encoded_features)
+            # MultipleLines encoding
+            if 'MultipleLines' in df_processed.columns:
+                df_processed['MultipleLines'] = df_processed['MultipleLines'].map(
+                    {'No': 0, 'Yes': 1, 'No phone service': 2}
+                )
             
-            # Drop original categorical columns and add encoded ones
-            df_processed = df_processed.drop(columns=categorical_cols)
-            df_processed = pd.concat([df_processed, encoded_df], axis=1)
-        except Exception as e:
-            st.warning(f"Encoding error: {e}. Using original categorical features.")
+            # InternetService encoding
+            if 'InternetService' in df_processed.columns:
+                df_processed['InternetService'] = df_processed['InternetService'].map(
+                    {'DSL': 0, 'Fiber optic': 1, 'No': 2}
+                )
+            
+            # Internet-dependent services
+            internet_dependent = ['OnlineSecurity', 'OnlineBackup', 'DeviceProtection', 
+                                'TechSupport', 'StreamingTV', 'StreamingMovies']
+            for col in internet_dependent:
+                if col in df_processed.columns:
+                    df_processed[col] = df_processed[col].map(
+                        {'No': 0, 'Yes': 1, 'No internet service': 2}
+                    )
+            
+            # Contract encoding
+            if 'Contract' in df_processed.columns:
+                df_processed['Contract'] = df_processed['Contract'].map(
+                    {'Month-to-month': 0, 'One year': 1, 'Two year': 2}
+                )
+            
+            # PaymentMethod encoding
+            payment_methods = {'Electronic check': 0, 'Mailed check': 1, 
+                            'Bank transfer (automatic)': 2, 'Credit card (automatic)': 3}
+            if 'PaymentMethod' in df_processed.columns:
+                df_processed['PaymentMethod'] = df_processed['PaymentMethod'].map(payment_methods)
+        
+        # Ensure SeniorCitizen is an integer (it might be coming in as Yes/No)
+        if 'SeniorCitizen' in df_processed.columns and df_processed['SeniorCitizen'].dtype == 'object':
+            df_processed['SeniorCitizen'] = df_processed['SeniorCitizen'].map({'No': 0, 'Yes': 1})
+        
+        # Apply scaling to numerical features
+        numerical_cols = ['tenure', 'MonthlyCharges', 'TotalCharges']
+        if scaler is not None and all(col in df_processed.columns for col in numerical_cols):
+            try:
+                df_processed[numerical_cols] = scaler.transform(df_processed[numerical_cols])
+            except Exception as e:
+                st.warning(f"Error scaling numerical features: {str(e)}")
+        
+        # Make sure all columns are numeric
+        for col in df_processed.columns:
+            if df_processed[col].dtype == 'object':
+                st.warning(f"Column {col} still contains non-numeric values: {df_processed[col].unique()}")
+                # Try to convert to numeric as a last resort
+                df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce')
+        
+        return df_processed
     
-    # Apply scaling to numerical features
-    if scaler is not None:
-        try:
-            # Scale the numerical columns
-            df_processed[numerical_cols] = scaler.transform(df_processed[numerical_cols])
-        except Exception as e:
-            st.warning(f"Scaling error: {e}. Using original numerical features.")
-    
-    return df_processed
+    except Exception as e:
+        st.error(f"Error in preprocessing: {str(e)}")
+        # Return the original dataframe if preprocessing fails
+        return df
 
 # Main app layout
 def main():
