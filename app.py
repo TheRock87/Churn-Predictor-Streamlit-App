@@ -2,12 +2,37 @@ import streamlit as st
 import pandas as pd
 import pickle
 import numpy as np
+import os
+
+# Check for required packages
+required_packages = {
+    'matplotlib': 'matplotlib',
+    'seaborn': 'seaborn',
+    'plotly.express': 'plotly',
+    'plotly.graph_objects': 'plotly',
+    'PIL': 'pillow',
+    'xgboost': 'xgboost'
+}
+
+missing_packages = []
+for package, pip_name in required_packages.items():
+    try:
+        __import__(package.split('.')[0])
+    except ImportError:
+        missing_packages.append(pip_name)
+
+if missing_packages:
+    st.error(f"Missing required packages: {', '.join(missing_packages)}")
+    st.info(f"Please install missing packages using: pip install {' '.join(missing_packages)}")
+    st.stop()
+
+# Now import the rest after checking
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
 from PIL import Image
-import os
+import xgboost
 
 # Set page configuration
 st.set_page_config(
@@ -52,9 +77,23 @@ st.markdown("""
 @st.cache_resource
 def load_model_and_preprocessors():
     try:
+        # Check if files exist before attempting to load them
+        required_files = ['ensemble_model.pkl', 'scaler.pkl', 'encoder.pkl']
+        missing_files = [f for f in required_files if not os.path.exists(f)]
+        
+        if missing_files:
+            st.error(f"Missing required files: {', '.join(missing_files)}")
+            st.info("Please make sure all required pickle files are in the app directory.")
+            return None, None, None
+        
         # Load the ensemble model
-        with open('ensemble_model.pkl', 'rb') as file:
-            model = pickle.load(file)
+        try:
+            with open('ensemble_model.pkl', 'rb') as file:
+                model = pickle.load(file)
+        except Exception as e:
+            st.error(f"Error loading model: {str(e)}")
+            st.info("This could be due to incompatible versions or missing dependencies.")
+            return None, None, None
             
         # Load the scaler for numerical features
         with open('scaler.pkl', 'rb') as file:
@@ -65,8 +104,9 @@ def load_model_and_preprocessors():
             encoder = pickle.load(file)
             
         return model, scaler, encoder
-    except FileNotFoundError as e:
-        st.error(f"File not found: {str(e)}. Please make sure all pickle files exist in the app directory.")
+    except Exception as e:
+        st.error(f"Error loading files: {str(e)}")
+        st.info("Please check that all files are present and compatible with the current environment.")
         return None, None, None
 
 # Function for preprocessing inputs
