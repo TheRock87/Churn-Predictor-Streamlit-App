@@ -265,7 +265,7 @@ def main():
         st.session_state.use_sample_data = False
     
     # Create tabs
-    tab1, tab2, tab3 = st.tabs(["Prediction", "Visualization", "About"])
+    tab1, tab2 = st.tabs(["Prediction", "About"])
     
     with tab1:
         # Input form
@@ -364,11 +364,11 @@ def main():
                                          options=['Electronic check', 'Mailed check', 'Bank transfer (automatic)', 'Credit card (automatic)'],
                                          index=0 if use_sample and sample_data['PaymentMethod'] == 'Electronic check' else 1)
             
-            monthly_charges = st.number_input('Monthly Charges (please covert from EGP to USD)', 
+            monthly_charges = st.number_input('Monthly Charges (Please convert from EGP to USD)', 
                                             min_value=0.0, max_value=200.0, step=0.01,
                                             value=sample_data['MonthlyCharges'] if use_sample else 20.0)
             
-            total_charges = st.number_input('Total Charges (please covert from EGP to USD)', 
+            total_charges = st.number_input('Total Charges (Please convert from EGP to USD)', 
                                           min_value=0.0, max_value=10000.0, step=0.01,
                                           value=sample_data['TotalCharges'] if use_sample else tenure * monthly_charges)
         
@@ -468,132 +468,13 @@ def main():
                             - Send satisfaction survey
                             """)
                     
-                    # Feature importance visualization (placeholder - would need actual model coefficients)
-                    st.subheader("Key Factors Influencing Prediction")
-                    
-                    # This is a placeholder - in a real app you would extract actual feature importance
-                    # from your model if it supports it
-                    importance_data = {
-                        'Contract': 0.35,
-                        'tenure': 0.25,
-                        'MonthlyCharges': 0.15,
-                        'InternetService': 0.10,
-                        'TechSupport': 0.08,
-                        'OnlineSecurity': 0.07
-                    }
-                    
-                    if PLOTLY_AVAILABLE:
-                        fig = px.bar(
-                            x=list(importance_data.values()),
-                            y=list(importance_data.keys()),
-                            orientation='h',
-                            labels={'x': 'Importance', 'y': 'Feature'},
-                            title='Feature Importance',
-                            color=list(importance_data.values()),
-                            color_continuous_scale='Blues'
-                        )
-                        
-                        fig.update_layout(height=400)
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        # Fallback to simple text display if plotly is not available
-                        for feature, importance in sorted(importance_data.items(), key=lambda x: x[1], reverse=True):
-                            st.write(f"**{feature}**: {importance:.2f}")
+                    # No feature importance visualization as requested
                     
                 except Exception as e:
                     st.error(f"Prediction error: {e}")
                     st.info("This could be due to a mismatch between the input features and what the model expects. Make sure your model is compatible with the input features.")
     
     with tab2:
-        st.subheader("Data Visualization")
-        
-        # Placeholder visualizations - in a real app, these would be based on your actual dataset
-        st.write("These visualizations help understand patterns in customer churn.")
-        
-        if PLOTLY_AVAILABLE:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Churn by Contract Type
-                contract_data = {
-                    'Contract': ['Month-to-month', 'One year', 'Two year'],
-                    'Churn Rate': [0.42, 0.11, 0.03]
-                }
-                fig = px.bar(
-                    contract_data, 
-                    x='Contract', 
-                    y='Churn Rate',
-                    title='Churn Rate by Contract Type',
-                    color='Churn Rate',
-                    color_continuous_scale='Reds'
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Churn by Tenure
-                tenure_data = pd.DataFrame({
-                    'Tenure Group': ['0-12', '12-24', '24-36', '36-48', '48-60', '60-72'],
-                    'Churn Rate': [0.52, 0.36, 0.27, 0.18, 0.12, 0.08]
-                })
-                fig = px.line(
-                    tenure_data, 
-                    x='Tenure Group', 
-                    y='Churn Rate', 
-                    markers=True,
-                    title='Churn Rate by Tenure (months)',
-                    line_shape='linear'
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                # Churn by Internet Service
-                internet_data = {
-                    'Internet Service': ['DSL', 'Fiber optic', 'No'],
-                    'Churn Rate': [0.19, 0.42, 0.07]
-                }
-                fig = px.pie(
-                    internet_data, 
-                    names='Internet Service', 
-                    values='Churn Rate',
-                    title='Churn Distribution by Internet Service',
-                    hole=0.4,
-                    color_discrete_sequence=px.colors.sequential.Blues
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Monthly Charges vs Churn
-                fig = px.histogram(
-                    x=[30, 45, 60, 75, 90, 105, 120],
-                    nbins=10,
-                    title='Monthly Charges Distribution',
-                    labels={'x': 'Monthly Charges ($)'},
-                    color_discrete_sequence=['#3366CC']
-                )
-                
-                # Add a vertical line for average
-                fig.add_vline(x=70, line_width=2, line_dash="dash", line_color="red")
-                fig.add_annotation(x=70, y=10, text="Avg. Charge", showarrow=True, arrowhead=1)
-                
-                st.plotly_chart(fig, use_container_width=True)
-        else:
-            # Fallback to simple text display if plotly is not available
-            st.info("Visualizations require Plotly. Install with: pip install plotly")
-            
-            st.subheader("Key Churn Insights (Text Summary)")
-            st.write("**Contract Type Impact:**")
-            st.write("- Month-to-month: 42% churn rate")
-            st.write("- One year: 11% churn rate")
-            st.write("- Two year: 3% churn rate")
-            
-            st.write("**Tenure Impact:**")
-            st.write("- New customers (0-12 months): 52% churn rate")
-            st.write("- Long-term customers (60-72 months): 8% churn rate")
-            
-            st.write("**Internet Service Impact:**")
-            st.write("- Fiber optic: 42% churn rate (highest)")
-            st.write("- DSL: 19% churn rate")
-            st.write("- No internet service: 7% churn rate (lowest)")
-    
-    with tab3:
         st.subheader("About This App")
         st.write("""
         This Churn Predictor app uses machine learning to predict customer churn probability based on various features.
